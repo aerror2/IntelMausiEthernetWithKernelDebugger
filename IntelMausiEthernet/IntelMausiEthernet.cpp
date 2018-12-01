@@ -22,6 +22,14 @@
 #include <libkern/version.h>
 #include "IntelMausiEthernet.h"
 
+
+//#define    ETHERMTU    1500
+#define    ETHERHDRSIZE    14
+#define    ETHERCRC    4
+#define    KDP_MAXPACKET    (ETHERHDRSIZE + ETHERMTU + ETHERCRC)
+
+
+
 #pragma mark --- function prototypes ---
 
 static inline void prepareTSO4(mbuf_t m, UInt32 *mssHeaderSize, UInt32 *payloadSize);
@@ -602,7 +610,7 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
 
                
                 //interface->enqueueInputPacket(rxPacketHead, pollQueue);
-                if( rxPacketSize < 1454)
+                if( rxPacketSize <= KDP_MAXPACKET)
                 {
                     isReceived = true;
                     * pktSizeOUt =rxPacketSize;
@@ -674,7 +682,7 @@ void IntelMausi::sendPacket(void * pkt, UInt32 pktSize)
     struct e1000_data_desc *desc;
     struct e1000_context_desc *contDesc;
     mbuf_t m;
-    IOReturn result = kIOReturnNoResources;
+ //   IOReturn result = kIOReturnNoResources;
     UInt32 numDescs;
     UInt32 cmd;
     UInt32 opts;
@@ -701,7 +709,7 @@ void IntelMausi::sendPacket(void * pkt, UInt32 pktSize)
     }
     
     
-    if(pktSize >  1454)
+    if(pktSize >  KDP_MAXPACKET)
     {
         DebugLog("Ethernet [IntelMausi]:sendPacket  pktSize is too big.\n");
         goto done;
