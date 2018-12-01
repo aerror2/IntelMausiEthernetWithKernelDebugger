@@ -1,21 +1,18 @@
-## Fork of Mieze's Intel Mausi Network Driver by RehabMan
+## Fork Intel Mausi Network Driver by RehabMan
+
+I added the implementation of IOKernelDebugger with IOKDP
+
+So anyone use these NIC  can do the kernel debugging between  two real machine. 
+
+Details about how to make this happen. please refer https://www.tonymacx86.com/threads/discussion-about-how-to-make-nvidia-web-driver-works-in-macos-10-14-mojave.265813/#post-1863247
+
+
+
 
 ### How to Install:
-
-Install to /S/L/E or /L/E using your favorite kext installer.
-
-Or if using during installation, copy the kext to EFI/Clover/kexts/Other.
-
-There are no real changes in this repo.  I only forked it so I could have a build on bitbucket for automated scripts which download and install (via download.sh and install_downloads.sh used by my guides)
-
-I will occasionally update the repo to sync with Mieze's changes (after testing).
+ copy the /Volume/EFI/EFI/CLOVER/kexts/Other
 
 
-### Downloads:
-
-Downloads are available on Bitbucket:
-
-https://bitbucket.org/RehabMan/os-x-intel-network/downloads/
 
 
 ### Original README follows:
