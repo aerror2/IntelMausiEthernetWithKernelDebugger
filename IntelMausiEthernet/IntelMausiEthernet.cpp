@@ -26,7 +26,7 @@
 //#define    ETHERMTU    1500
 #define    ETHERHDRSIZE    14
 #define    ETHERCRC    4
-#define    KDP_MAXPACKET    (ETHERHDRSIZE + ETHERMTU + ETHERCRC)
+#define    KDP_MAXPACKET    ( ETHERMTU  + ETHERHDRSIZE + ETHERCRC)
 
 
 
@@ -518,6 +518,10 @@ IOReturn IntelMausi::disable(IOKernelDebugger * debugger)
 
 void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
 {
+    
+  //  DebugLog("IntelMausi::receivePacket call timeout %u. <===\n",  timeout);
+    txInterrupt();
+    
    
     IOPhysicalSegment rxSegment;
     union e1000_rx_desc_extended *desc = &rxDescArray[rxNextDescIndex];
@@ -537,8 +541,7 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
     {
     
       
-        
-        while (((status = OSSwapLittleToHostInt32(desc->wb.upper.status_error)) & E1000_RXD_STAT_DD) && !isReceived) {
+        while( !isReceived && ((status = OSSwapLittleToHostInt32(desc->wb.upper.status_error)) & E1000_RXD_STAT_DD)) {
             addr = rxBufArray[rxNextDescIndex].phyAddr;
             bufPkt = rxBufArray[rxNextDescIndex].mbuf;
             pktSize = OSSwapLittleToHostInt16(desc->wb.upper.length);
@@ -613,9 +616,21 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
                 if( rxPacketSize <= KDP_MAXPACKET)
                 {
                     isReceived = true;
+                    uint32_t usedSize = 0;
+                    mbuf_t bb = rxPacketHead;
+                    while(bb && usedSize < KDP_MAXPACKET)
+                    {
+                        void * pkd  = mbuf_data(bb);
+                        size_t pkl = mbuf_len(bb);
+                        memcpy((unsigned char *)pkt+usedSize,pkd,pkl);
+                        usedSize +=pkl;
+                        if(newPkt==bb)
+                            break;
+                        bb = mbuf_next(bb);
+                        
+                    }
                     * pktSizeOUt =rxPacketSize;
-                    void * pkd  = mbuf_data(rxPacketHead);
-                    memcpy(pkt,pkd,rxPacketSize);
+
                 }
                 else
                 {
@@ -625,7 +640,6 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
                 rxPacketHead = rxPacketTail = NULL;
                 rxPacketSize = 0;
                 
-            //    goodPkts++;
             } else {
                 if (rxPacketHead) {
                     /* We are in the middle of a jumbo frame. */
@@ -649,11 +663,18 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
             ++rxNextDescIndex &= kRxDescMask;
             desc = &rxDescArray[rxNextDescIndex];
             rxCleanedCount++;
+
+
+        }
+        if(isReceived)
+        {
+            break;
         }
         IOSleep(10);
         costTime += 10;
     }
-    
+ //   DebugLog("IntelMausi::receivePacket start cleaning \n");
+
     
     if (rxCleanedCount >= E1000_RX_BUFFER_WRITE) {
         /*
@@ -667,8 +688,29 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
         
         rxCleanedCount = 0;
     }
-
     
+    struct e1000_hw *hw = &adapterData.hw;
+
+     UInt32 icr = intelReadMem32(E1000_ICR); /* read ICR disables interrupts using IAM */
+    
+    /* Reset on uncorrectable ECC error */
+    if ((icr & E1000_ICR_ECCER) && (hw->mac.type >= e1000_pch_lpt)) {
+        UInt32 pbeccsts = intelReadMem32(E1000_PBECCSTS);
+        
+        etherStats->dot3StatsEntry.internalMacReceiveErrors += (pbeccsts & E1000_PBECCSTS_UNCORR_ERR_CNT_MASK) >>E1000_PBECCSTS_UNCORR_ERR_CNT_SHIFT;
+        etherStats->dot3TxExtraEntry.resets++;
+        
+        IOLog("Ethernet [IntelMausi]: Uncorrectable ECC error. Reseting chip.\n");
+        intelRestart();
+        return;
+    }
+    if (icr & (E1000_ICR_LSC | E1000_IMS_RXSEQ)) {
+        checkLinkStatus();
+    }
+    /* Reenable interrupts by setting the bits in the mask register. */
+    intelWriteMem32(E1000_IMS, icr);
+    
+   //   DebugLog("IntelMausi::receivePacket call timeout %u. ===>\n",  timeout);
     
 }
 
@@ -676,7 +718,8 @@ void IntelMausi::sendPacket(void * pkt, UInt32 pktSize)
 {
     
     
-    
+  //  DebugLog("IntelMausi::sendPacket pktSize %u. ===>\n",  pktSize);
+
     
     IOPhysicalSegment txSegments[kMaxSegs];
     struct e1000_data_desc *desc;
@@ -724,10 +767,10 @@ void IntelMausi::sendPacket(void * pkt, UInt32 pktSize)
     
     txInterrupt();
     //free the desc firstly
-    for(int i=0;i < 50 &&!(txNumFreeDesc >= (kMaxSegs + kTxSpareDescs)); i++)
+    for(int i=0;i < 100 &&!(txNumFreeDesc >= (kMaxSegs + kTxSpareDescs)); i++)
     {
         txInterrupt();
-        IOSleep(100);
+        IOSleep(10);
     }
     
     if(!(txNumFreeDesc >= (kMaxSegs + kTxSpareDescs)))
@@ -842,7 +885,7 @@ void IntelMausi::sendPacket(void * pkt, UInt32 pktSize)
             DebugLog("Ethernet [IntelMausi]: getPhysicalSegmentsWithCoalesce() failed. Dropping packet.\n");
             etherStats->dot3TxExtraEntry.resourceErrors++;
             freePacket(m);
-            continue;
+            break;
         }
         OSAddAtomic(-numDescs, &txNumFreeDesc);
         index = txNextDescIndex;
@@ -928,8 +971,8 @@ void IntelMausi::sendPacket(void * pkt, UInt32 pktSize)
     
    // result = (txNumFreeDesc >= (kMaxSegs + kTxSpareDescs)) ? kIOReturnSuccess : kIOReturnNoResources;
     
-    //DebugLog("outputStart() <===\n");
-    
+   // DebugLog("IntelMausi::sendPacket pktSize %u. <====\n",  count);
+
 done:
     return ;
   
