@@ -496,6 +496,212 @@ IOReturn IntelMausi::disable(IOKernelDebugger * debugger)
 }
 
 
+#define DO_ALIGN    1    /* align all packet data accesses */
+#define    KDP_REMOTE_PORT        41139    /* pick one and register it */
+struct kdp_in_addr {
+    uint32_t s_addr;
+};
+
+#define ETHER_ADDR_LEN 6
+
+struct kdp_ether_addr {
+    u_char ether_addr_octet[ETHER_ADDR_LEN];
+};
+
+typedef struct kdp_ether_addr enet_addr_t;
+
+extern struct kdp_ether_addr kdp_get_mac_addr(void);
+unsigned int  kdp_get_ip_address(void);
+
+struct  kdp_ether_header {
+    u_char  ether_dhost[ETHER_ADDR_LEN];
+    u_char  ether_shost[ETHER_ADDR_LEN];
+    u_short ether_type;
+};
+
+typedef struct kdp_ether_header ether_header_t;
+
+#define ntohs(x)           OSSwapBigToHostInt16(x)
+#define ntohl(x)           OSSwapBigToHostInt32(x)
+#define htons(x)           OSSwapHostToBigInt16(x)
+#define htonl(x)           OSSwapHostToBigInt32(x)
+
+
+
+/*    @(#)udp_usrreq.c    2.2 88/05/23 4.0NFSSRC SMI;    from UCB 7.1 6/5/86    */
+
+/*
+ * UDP protocol implementation.
+ * Per RFC 768, August, 1980.
+ */
+#define UDP_TTL    60 /* deflt time to live for UDP packets */
+static int udp_ttl = UDP_TTL;
+static unsigned char    exception_seq;
+
+struct kdp_ipovly {
+    uint32_t ih_next, ih_prev;    /* for protocol sequence q's */
+    u_char  ih_x1;            /* (unused) */
+    u_char  ih_pr;            /* protocol */
+    short   ih_len;            /* protocol length */
+    struct  kdp_in_addr ih_src;    /* source internet address */
+    struct  kdp_in_addr ih_dst;    /* destination internet address */
+};
+
+struct kdp_udphdr {
+    u_short uh_sport;        /* source port */
+    u_short uh_dport;        /* destination port */
+    short   uh_ulen;        /* udp length */
+    u_short uh_sum;            /* udp checksum */
+};
+
+struct  kdp_udpiphdr {
+    struct  kdp_ipovly ui_i;    /* overlaid ip structure */
+    struct  kdp_udphdr ui_u;    /* udp header */
+};
+#define    ui_next        ui_i.ih_next
+#define    ui_prev        ui_i.ih_prev
+#define    ui_x1        ui_i.ih_x1
+#define    ui_pr        ui_i.ih_pr
+#define    ui_len        ui_i.ih_len
+#define    ui_src        ui_i.ih_src
+#define    ui_dst        ui_i.ih_dst
+#define    ui_sport    ui_u.uh_sport
+#define    ui_dport    ui_u.uh_dport
+#define    ui_ulen        ui_u.uh_ulen
+#define    ui_sum        ui_u.uh_sum
+
+struct kdp_ip {
+    union {
+        uint32_t ip_w;
+        struct {
+            unsigned int
+#ifdef __LITTLE_ENDIAN__
+        ip_xhl:4,    /* header length */
+        ip_xv:4,    /* version */
+        ip_xtos:8,    /* type of service */
+        ip_xlen:16;    /* total length */
+#endif
+#ifdef __BIG_ENDIAN__
+        ip_xv:4,    /* version */
+        ip_xhl:4,    /* header length */
+        ip_xtos:8,    /* type of service */
+        ip_xlen:16;    /* total length */
+#endif
+        } ip_x;
+    } ip_vhltl;
+    u_short ip_id;            /* identification */
+    short   ip_off;            /* fragment offset field */
+#define    IP_DF 0x4000            /* dont fragment flag */
+#define    IP_MF 0x2000            /* more fragments flag */
+#define    IP_OFFMASK 0x1fff        /* mask for fragmenting bits */
+    u_char  ip_ttl;            /* time to live */
+    u_char  ip_p;            /* protocol */
+    u_short ip_sum;            /* checksum */
+    struct  kdp_in_addr ip_src,ip_dst;  /* source and dest address */
+};
+#define    ip_v        ip_vhltl.ip_x.ip_xv
+#define    ip_hl        ip_vhltl.ip_x.ip_xhl
+#define    ip_tos        ip_vhltl.ip_x.ip_xtos
+#define    ip_len        ip_vhltl.ip_x.ip_xlen
+
+#define    IPPROTO_UDP    17
+#define    IPVERSION    4
+
+#define    ETHERTYPE_IP    0x0800  /* IP protocol */
+
+/*
+ * Ethernet Address Resolution Protocol.
+ *
+ * See RFC 826 for protocol description.  Structure below is adapted
+ * to resolving internet addresses.  Field names used correspond to
+ * RFC 826.
+ */
+
+#define    ETHERTYPE_ARP    0x0806  /* Addr. resolution protocol */
+
+struct  kdp_arphdr {
+    u_short ar_hrd;         /* format of hardware address */
+#define    ARPHRD_ETHER    1       /* ethernet hardware format */
+#define    ARPHRD_FRELAY   15      /* frame relay hardware format */
+    u_short ar_pro;         /* format of protocol address */
+    u_char  ar_hln;         /* length of hardware address */
+    u_char  ar_pln;         /* length of protocol address */
+    u_short ar_op;          /* one of: */
+#define    ARPOP_REQUEST   1       /* request to resolve address */
+#define    ARPOP_REPLY     2       /* response to previous request */
+#define    ARPOP_REVREQUEST 3      /* request protocol address given hardware */
+#define    ARPOP_REVREPLY  4       /* response giving protocol address */
+#define    ARPOP_INVREQUEST 8      /* request to identify peer */
+#define    ARPOP_INVREPLY  9       /* response identifying peer */
+};
+
+struct  kdp_ether_arp {
+    struct  kdp_arphdr ea_hdr;        /* fixed-size header */
+    u_char  arp_sha[ETHER_ADDR_LEN];        /* sender hardware address */
+    u_char  arp_spa[4];            /* sender protocol address */
+    u_char  arp_tha[ETHER_ADDR_LEN];        /* target hardware address */
+    u_char  arp_tpa[4];            /* target protocol address */
+};
+#define    arp_hrd    ea_hdr.ar_hrd
+#define    arp_pro    ea_hdr.ar_pro
+#define    arp_hln    ea_hdr.ar_hln
+#define    arp_pln    ea_hdr.ar_pln
+#define    arp_op    ea_hdr.ar_op
+
+
+ struct KDP_Packet {
+    unsigned char    *data;
+    unsigned int    off, len;
+    boolean_t        input;
+ } ;
+
+bool isKdpPacket(struct KDP_Packet &pkt)
+{
+    
+    struct kdp_ether_header    *eh = NULL;
+    struct kdp_udpiphdr    aligned_ui, *ui = &aligned_ui;
+    struct kdp_ip        aligned_ip, *ip = &aligned_ip;
+
+    if (pkt.len < (sizeof (struct kdp_ether_header) + sizeof (struct kdp_udpiphdr)))
+        return false;
+    
+ 
+    eh = (struct kdp_ether_header *)&pkt.data[pkt.off];
+    
+
+    
+
+    pkt.off += (unsigned int)sizeof (struct kdp_ether_header);
+    if (ntohs(eh->ether_type) != ETHERTYPE_IP) {
+        return false;
+    }
+
+    #if DO_ALIGN
+    bcopy((char *)&pkt.data[pkt.off], (char *)ui, sizeof(*ui));
+    bcopy((char *)&pkt.data[pkt.off], (char *)ip, sizeof(*ip));
+    #else
+    ui = (struct kdp_udpiphdr *)&pkt.data[pkt.off];
+    ip = (struct kdp_ip *)&pkt.data[pkt.off];
+    #endif
+
+    pkt.off += (unsigned int)sizeof (struct kdp_udpiphdr);
+    if (ui->ui_pr != IPPROTO_UDP) {
+        return false;
+    }
+
+    if (ip->ip_hl > (sizeof (struct kdp_ip) >> 2)) {
+        return false;
+    }
+    
+    if (ntohs(ui->ui_dport) != KDP_REMOTE_PORT) {
+        return false;
+    }
+    
+    return true;
+}
+
+
+
 /*! @function receivePacket
  @abstract Debugger polled-mode receive handler.
  @discussion This method must be implemented by a driver that supports
@@ -535,7 +741,8 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
     
     bool isReceived = false;
     UInt32 costTime =0;
-    
+    * pktSizeOUt =0;
+
     
     while(!isReceived && costTime < timeout*1000)
     {
@@ -610,7 +817,7 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
                 
                 
               
-
+                bool bKdp =false;
                
                 //interface->enqueueInputPacket(rxPacketHead, pollQueue);
                 if( rxPacketSize <= KDP_MAXPACKET)
@@ -629,12 +836,28 @@ void IntelMausi::receivePacket(void * pkt, UInt32 * pktSizeOUt, UInt32 timeout)
                         bb = mbuf_next(bb);
                         
                     }
-                    * pktSizeOUt =rxPacketSize;
+                    struct KDP_Packet pktx;
+                    pktx.data = (unsigned char *)pkt;
+                    pktx.off = 0;
+                    pktx.len = rxPacketSize;
+                    
+                    bKdp = isKdpPacket(pktx);
+                    
+                    if(bKdp)
+                    {
+                        * pktSizeOUt =rxPacketSize;
+                    }
+
 
                 }
                 else
                 {
                       DebugLog("Ethernet [IntelMausi]:receivePacket  drop larger packet  rxPacketSize %u.\n", rxPacketSize);
+                }
+                
+                if(bKdp)
+                {
+                    netif->enqueueInputPacket(rxPacketHead, NULL);
                 }
 
                 rxPacketHead = rxPacketTail = NULL;
