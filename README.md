@@ -13,6 +13,42 @@ Details about how to make this happen. please refer https://www.tonymacx86.com/t
  copy the /Volume/EFI/EFI/CLOVER/kexts/Other
 
 
+### How to debug:
+
+Please follow the KDK readme.html. 
+
+lldb will search /Library/Developer/KDKs/ as well as any local directories indexed by Spotlight.
+
+You invoke lldb by the simple command:
+
+lldb
+
+Alternatively, you can specify the kernel file on the command line.
+
+lldb /Library/Developer/KDKs/<KDK Version>/System/Library/Kernels/kernel
+
+To attach, you either use kdp-remote for a live connection, or file -c for a coredump.
+
+kdp-remote {name_or_ip_address}
+file -c {path_to_coredump}
+
+Two machine debugging is not supported via USB Ethernet.
+Two machine debugging is not supported via wireless.
+
+Network Debugging
+
+The default setting for two machine debugging is as follows:
+
+sudo nvram boot-args="debug=0x146"
+sudo reboot
+
+
+
+You can raise the debug event after network is initialized using the combo key :
+
+shift + ctrl + option + comand + esc
+
+
 
 
 ### Original README follows:
