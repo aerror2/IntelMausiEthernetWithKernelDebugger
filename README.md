@@ -15,6 +15,8 @@ Details about how to make this happen. please refer https://www.tonymacx86.com/t
 
 ### How to debug:
 
+Install the KDK from developer.apple.com
+
 Please follow the KDK readme.html. 
 
 lldb will search /Library/Developer/KDKs/ as well as any local directories indexed by Spotlight.
